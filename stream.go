@@ -13,6 +13,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"github.com/mrjones/oauth"
 	"io"
 	"io/ioutil"
@@ -152,18 +153,21 @@ func (conn *streamConn) readStream(resp *http.Response, handler func([]byte), un
 	reader = bufio.NewReader(resp.Body)
 	conn.resp = resp
 
+	//chBreak := make(chan bool)
+	//chContinue := make(chan bool)
+
 	for {
+		//go func() {
+		//Debug("New Stream line is waiting....")
 		//we've been closed
 		if conn.stale {
 			conn.Close()
-			Debug("Connection closed, shutting down ")
+			Debug("Stale: Connection closed, shutting down ")
 			break
 		}
-
 		line, err := reader.ReadBytes('\n')
-
+		//Debug(string(line))
 		if err != nil {
-
 			if conn.stale {
 				Debug("conn stale, continue")
 				continue
@@ -175,14 +179,12 @@ func (conn *streamConn) readStream(resp *http.Response, handler func([]byte), un
 				Log(ERROR, " Could not reconnect to source? sleeping and will retry ", err)
 				if conn.wait < conn.maxWait {
 					conn.wait = conn.wait * 2
-				} else {
-					Log(ERROR, "exiting, max wait reached")
-					done <- true
-					return
 				}
 				continue
 			}
 			if resp.StatusCode != 200 {
+				Log(ERROR, fmt.Sprintf(" Connect OK but bad HTTP code returned. Expecting 200 Get %d ", resp.StatusCode))
+				conn.Close()
 				if conn.wait < conn.maxWait {
 					conn.wait = conn.wait * 2
 				}
@@ -200,7 +202,68 @@ func (conn *streamConn) readStream(resp *http.Response, handler func([]byte), un
 			continue
 		}
 		handler(line)
+
+		//}()
+
+		/*select {
+		case <-chBreak:
+			break
+		case <-chContinue:
+			continue
+		case <-time.After(1 * time.Duration(1) * time.Second):
+			Debug(flagReadNewLine)
+			//chBreak <- true
+			//Debug("nothing new")
+			//Debug(fmt.Sprintf("URL %s", conn.url.String()))
+			//Debug(fmt.Sprintf("URL %s", conn.url.Host))
+			//Debug(fmt.Sprintf("URL %s", conn.url.Host))
+			//conn.
+
+			continue
+
+		}*/
+
+		/*if err != nil {
+			if conn.stale {
+				Debug("conn stale, continue")
+				continue
+			}
+			time.Sleep(time.Second * time.Duration(conn.wait))
+			//try reconnecting, but exponentially back off until MaxWait is reached then exit?
+			resp, err := conn.connect()
+			if err != nil || resp == nil {
+				Log(ERROR, " Could not reconnect to source? sleeping and will retry ", err)
+				if conn.wait < conn.maxWait {
+					conn.wait = conn.wait * 2
+				} //else {
+					//Log(ERROR, "exiting, max wait reached")
+					//done <- true
+					//return
+				//}
+				continue
+			}
+			if resp.StatusCode != 200 {
+				Log(ERROR, fmt.Sprintf(" Connect OK but bad HTTP code returned. Expecting 200 Get %d ", resp.StatusCode))
+				conn.Close()
+				if conn.wait < conn.maxWait {
+					conn.wait = conn.wait * 2
+				}
+				continue
+			}
+
+			reader = bufio.NewReader(resp.Body)
+			continue
+		} else if conn.wait != 1 {
+			conn.wait = 1
+		}
+		line = bytes.TrimSpace(line)
+
+		if len(line) == 0 {
+			continue
+		}
+		handler(line)*/
 	}
+	Debug("On sort de la boucle principale")
 }
 
 func encodedAuth(user, pwd string) string {
