@@ -56,7 +56,7 @@ type streamConn struct {
 }
 
 func NewStreamConn(max int) streamConn {
-	return streamConn{wait: 1, maxWait: max}
+	return streamConn{wait: 10, maxWait: max}
 }
 
 //type StreamHandler func([]byte)
@@ -147,6 +147,35 @@ func formString(params map[string]string) string {
 	return body.String()
 }
 
+func (conn *streamConn) reconnect() (resp *http.Response) {
+	var err error
+	conn.stale = false
+	for {
+		time.Sleep(time.Second * time.Duration(conn.wait))
+		resp, err = conn.connect()
+
+		if err != nil || resp == nil {
+			Log(ERROR, " Could not reconnect to source sleeping and will retry ", err)
+			if conn.wait < conn.maxWait {
+				conn.wait = conn.wait * 2
+			}
+			continue
+		}
+
+		if resp.StatusCode != 200 {
+			Log(ERROR, fmt.Sprintf(" Connect OK but bad HTTP code returned. Expecting 200 Get %d ", resp.StatusCode))
+			conn.Close()
+			if conn.wait < conn.maxWait {
+				conn.wait = conn.wait * 2
+			}
+			continue
+		}
+		Log(INFO, "Well done we are reconnected")
+		break
+	}
+	return resp
+}
+
 func (conn *streamConn) readStream(resp *http.Response, handler func([]byte), uniqueId string, done chan bool) {
 
 	var reader *bufio.Reader
@@ -157,13 +186,43 @@ func (conn *streamConn) readStream(resp *http.Response, handler func([]byte), un
 	//chContinue := make(chan bool)
 
 	for {
-		//go func() {
-		//Debug("New Stream line is waiting....")
 		//we've been closed
 		if conn.stale {
 			conn.Close()
+			Debug("Stale: Connection closed, try to reconnect ")
+			resp = conn.reconnect()
+			reader = bufio.NewReader(resp.Body)
+		}
+		Debug("Wait for data from stream")
+		line, err := reader.ReadBytes('\n')
+		//Debug("Line recieved : ", string(line), err)
+		if err != nil {
+			Debug("Error while reading from stream", err)
+			if conn.stale {
+				Debug("conn stale, continue")
+				continue
+			}
+			resp = conn.reconnect()
+			reader = bufio.NewReader(resp.Body)
+			continue
+		} else if conn.wait > 10 {
+			conn.wait = 10
+		}
+		line = bytes.TrimSpace(line)
+
+		if len(line) == 0 {
+			Debug("Len line eq 0")
+			continue
+		}
+		Debug("On invoque le handler")
+		handler(line)
+
+		/*//we've been closed
+		if conn.stale {
+			conn.Close()
+
 			Debug("Stale: Connection closed, shutting down ")
-			break
+			continue
 		}
 		line, err := reader.ReadBytes('\n')
 		//Debug(string(line))
@@ -201,27 +260,7 @@ func (conn *streamConn) readStream(resp *http.Response, handler func([]byte), un
 		if len(line) == 0 {
 			continue
 		}
-		handler(line)
-
-		//}()
-
-		/*select {
-		case <-chBreak:
-			break
-		case <-chContinue:
-			continue
-		case <-time.After(1 * time.Duration(1) * time.Second):
-			Debug(flagReadNewLine)
-			//chBreak <- true
-			//Debug("nothing new")
-			//Debug(fmt.Sprintf("URL %s", conn.url.String()))
-			//Debug(fmt.Sprintf("URL %s", conn.url.Host))
-			//Debug(fmt.Sprintf("URL %s", conn.url.Host))
-			//conn.
-
-			continue
-
-		}*/
+		handler(line)*/
 
 		/*if err != nil {
 			if conn.stale {

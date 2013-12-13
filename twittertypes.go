@@ -1,7 +1,7 @@
 package httpstream
 
 import (
-	"bytes"
+	//"bytes"
 	//"encoding/json"
 	"net/url"
 )
@@ -245,10 +245,13 @@ The twitter stream contains non-tweets (deletes)
 */
 // a function to filter out the delete messages
 func OnlyTweetsFilter(handler func([]byte)) func([]byte) {
-	delTw := []byte(`{"delete"`)
+	return func(line []byte) {
+		handler(line)
+	}
+	/*delTw := []byte(`{"delete"`)
 	return func(line []byte) {
 		if !bytes.HasPrefix(line, delTw) {
 			handler(line)
 		}
-	}
+	}*/
 }
